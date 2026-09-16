@@ -6,13 +6,13 @@ const prisma = require('../src/prismaClient');
 async function main() {
   console.log('Seeding database...');
   // 1. Create Users
-  const adminPasswordHash = await bcrypt.hash('password', 10);
-  const foPasswordHash = await bcrypt.hash('password', 10);
-  const cashierPasswordHash = await bcrypt.hash('password', 10);
+  const adminPasswordHash = await bcrypt.hash('123', 10);
+  const foPasswordHash = await bcrypt.hash('123', 10);
+  const cashierPasswordHash = await bcrypt.hash('123', 10);
 
   const admin = await prisma.user.upsert({
     where: { username: 'admin' },
-    update: {},
+    update: { passwordHash: adminPasswordHash, isActive: true },
     create: {
       username: 'admin',
       passwordHash: adminPasswordHash,
@@ -23,7 +23,7 @@ async function main() {
 
   const fo = await prisma.user.upsert({
     where: { username: 'fo' },
-    update: {},
+    update: { passwordHash: foPasswordHash, isActive: true },
     create: {
       username: 'fo',
       passwordHash: foPasswordHash,
@@ -34,7 +34,7 @@ async function main() {
 
   const cashier = await prisma.user.upsert({
     where: { username: 'cashier' },
-    update: {},
+    update: { passwordHash: cashierPasswordHash, isActive: true },
     create: {
       username: 'cashier',
       passwordHash: cashierPasswordHash,

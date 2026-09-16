@@ -96,6 +96,32 @@ async function loadSystemUserId() {
 }
 loadSystemUserId();
 
+// ---------- Housekeeping integration ----------
+// A room must be clean or inspected before it can be assigned to a checked-in guest.
+async function assertRoomCleanForCheckIn(roomId) {
+  const room = await prisma.room.findUnique({ where: { id: roomId }, select: { cleanStatus: true, roomNumber: true } });
+  if (!room) return;
+  const ready = ['clean', 'inspected'].includes(room.cleanStatus);
+  if (!ready) {
+    throw new HttpError(409, `Room ${room.roomNumber} (#${roomId}) is not ready for guests. Clean status is "${room.cleanStatus}"; it must be clean or inspected before check-in.`);
+  }
+}
+
+// Queue a checkout_clean housekeeping task for a room that just checked out.
+async function createCheckoutCleanTask(tx, roomId, userId, scheduledFor) {
+  const effectiveUserId = userId || SYSTEM_USER_ID || 1;
+  if (!effectiveUserId) return null;
+  return tx.housekeepingTask.create({
+    data: {
+      roomId,
+      taskType: 'checkout_clean',
+      scheduledFor,
+      createdBy: effectiveUserId,
+      status: 'pending',
+    },
+  });
+}
+
 // ---------- Transitions ----------
 async function transitionToGuaranteed(reservationId, { userId, method = 'advance_payment', reason = null } = {}) {
   const reservation = await assertTransition(reservationId, 'guaranteed');
@@ -138,11 +164,18 @@ async function performCheckIn(reservationId, { userId, roomId = null } = {}) {
   };
   if (roomId) updates.roomId = roomId;
 
+  const targetRoomId = roomId || reservation.roomId;
+
+  // Block check-in when the assigned room is not housekeeping-ready.
+  if (targetRoomId) {
+    await assertRoomCleanForCheckIn(targetRoomId);
+  }
+
   const txOps = [
     prisma.reservation.update({ where: { id: reservationId }, data: updates }),
   ];
-  if (roomId || reservation.roomId) {
-    txOps.push(prisma.room.update({ where: { id: roomId || reservation.roomId }, data: { status: 'occupied' } }));
+  if (targetRoomId) {
+    txOps.push(prisma.room.update({ where: { id: targetRoomId }, data: { status: 'occupied' } }));
   }
 
   const results = await prisma.$transaction(txOps);
@@ -253,6 +286,7 @@ async function forceCompleteReservation(reservationId, { userId = null, reason =
 }
 
 async function attemptCheckout(reservationId, { userId = null } = {}) {
+  await loadSystemUserId();
   const reservation = await assertTransition(reservationId, 'checked_out');
 
   const lastAudit = await prisma.nightAudit.findFirst({
@@ -278,13 +312,20 @@ async function attemptCheckout(reservationId, { userId = null } = {}) {
     return { blocked: true, balance, status: 'checked_out', message: 'Outstanding balance must be settled before checkout.' };
   }
 
+  const effectiveUserId = userId || SYSTEM_USER_ID || 1;
+
   const updated = await prisma.$transaction(async (tx) => {
     const res = await tx.reservation.update({
       where: { id: reservationId },
       data: { status: 'checked_out', checkedOutAt: new Date(), checked_out_by: userId || null },
     });
     if (reservation.roomId) {
-      await tx.room.update({ where: { id: reservation.roomId }, data: { status: 'dirty' } });
+      await tx.room.update({
+        where: { id: reservation.roomId },
+        data: { status: 'dirty', cleanStatus: 'dirty' },
+      });
+      // Queue a checkout_clean housekeeping task so the room is refreshed for the next guest.
+      await createCheckoutCleanTask(tx, reservation.roomId, effectiveUserId, new Date());
     }
     return res;
   });
@@ -487,5 +528,7 @@ module.exports = {
   performEarlyCheckout,
   markNoShow,
   cancelReservation,
+  assertRoomCleanForCheckIn,
+  createCheckoutCleanTask,
   HttpError,
 };

@@ -52,6 +52,37 @@ enum BookingSource {
   travel_agent
   walk_in
   online
+  booking_com
+  agoda
+  expedia
+  airbnb
+}
+
+enum RoomCleanStatus {
+  dirty
+  cleaning_in_progress
+  clean
+  inspected
+  out_of_service
+}
+
+enum HousekeepingTaskType {
+  checkout_clean
+  stayover_clean
+  turndown
+  deep_clean
+  inspection
+}
+
+enum ChannelSyncDirection {
+  push
+  pull
+}
+
+enum ChannelSyncStatus {
+  pending
+  success
+  failed
 }
 
 enum GroupReservationStatus {
@@ -118,12 +149,14 @@ model User {
   invoices              TravelAgentTaxInvoice[]
   guestCharges          GuestCharge[]
   nightAudits           NightAudit[]
-  refunds               Refund[]
-  discounts             Discount[]
-  roomMaintenances      RoomMaintenance[]
-  auditLogs             AuditLog[]
+   refunds               Refund[]
+   discounts             Discount[]
+   roomMaintenances      RoomMaintenance[]
+   auditLogs             AuditLog[]
+   housekeepingStaff     HousekeepingStaff[]
+   createdHousekeepingTasks HousekeepingTask[]
 
-  @@map("users")
+   @@map("users")
 }
 
 model Role {
@@ -220,6 +253,7 @@ model RoomType {
 
   rooms        Room[]
   ratePlans    RatePlan[]
+  channelRateAvailability ChannelRateAvailability[]
 
   @@map("room_types")
 }
@@ -231,11 +265,13 @@ model Room {
   floorId      Int?         @map("floor_id")
   status       RoomStatus   @default(available)
   propertyId   Int          @default(1) @map("property_id")
+  cleanStatus  RoomCleanStatus @default(dirty) @map("clean_status")
 
   roomType     RoomType     @relation(fields: [roomTypeId], references: [id])
   floor        Floor?       @relation(fields: [floorId], references: [id])
   reservations Reservation[]
   maintenances RoomMaintenance[]
+  housekeepingTasks HousekeepingTask[]
 
   @@map("rooms")
 }
@@ -608,4 +644,114 @@ model AuditLog {
   @@index([entityType, entityId])
   @@index([createdAt])
   @@map("audit_logs")
+}
+
+model HousekeepingStaff {
+  id          Int      @id @default(autoincrement())
+  userId      Int?     @map("user_id")
+  name        String   @db.VarChar(100)
+  phone       String?  @db.VarChar(30)
+  shift       String?  @db.VarChar(30)
+  isActive    Boolean  @default(true) @map("is_active")
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  user            User?                 @relation(fields: [userId], references: [id])
+  assignments     HousekeepingTask[]
+  attendance      HousekeepingAttendance[]
+
+  @@map("housekeeping_staff")
+}
+
+model HousekeepingTask {
+  id          Int                   @id @default(autoincrement())
+  roomId      Int                   @map("room_id")
+  staffId     Int?                  @map("staff_id")
+  taskType    HousekeepingTaskType  @map("task_type")
+  scheduledFor DateTime             @map("scheduled_for") @db.Date
+  startedAt   DateTime?             @map("started_at") @db.Timestamp(0)
+  completedAt DateTime?             @map("completed_at") @db.Timestamp(0)
+  status      String                @default("pending") @db.VarChar(30)
+  notes       String?               @db.VarChar(255)
+  createdBy   Int                   @map("created_by")
+  createdAt   DateTime              @default(now()) @map("created_at")
+  updatedAt   DateTime              @updatedAt @map("updated_at")
+
+  room         Room                  @relation(fields: [roomId], references: [id])
+  staff        HousekeepingStaff?    @relation(fields: [staffId], references: [id])
+  creator      User                  @relation(fields: [createdBy], references: [id])
+  checklist    HousekeepingChecklistItem[]
+
+  @@map("housekeeping_tasks")
+}
+
+model HousekeepingChecklistItem {
+  id          Int              @id @default(autoincrement())
+  taskId      Int              @map("task_id")
+  label       String           @db.VarChar(150)
+  isChecked   Boolean          @default(false) @map("is_checked")
+
+  task        HousekeepingTask @relation(fields: [taskId], references: [id])
+
+  @@map("housekeeping_checklist_items")
+}
+
+model HousekeepingAttendance {
+  id          Int               @id @default(autoincrement())
+  staffId     Int               @map("staff_id")
+  date        DateTime          @db.Date
+  clockIn     DateTime?         @map("clock_in") @db.Timestamp(0)
+  clockOut    DateTime?         @map("clock_out") @db.Timestamp(0)
+
+  staff       HousekeepingStaff @relation(fields: [staffId], references: [id])
+
+  @@unique([staffId, date])
+  @@map("housekeeping_attendance")
+}
+
+model Channel {
+  id            Int      @id @default(autoincrement())
+  name          String   @db.VarChar(100)
+  code          String   @unique @db.VarChar(30)
+  isActive      Boolean  @default(true) @map("is_active")
+  apiEndpoint   String?  @map("api_endpoint") @db.VarChar(255)
+  credentialRef String?  @map("credential_ref") @db.VarChar(100)
+  createdAt     DateTime @default(now()) @map("created_at")
+  updatedAt     DateTime @updatedAt @map("updated_at")
+
+  rateAvailability ChannelRateAvailability[]
+  syncLogs         ChannelSyncLog[]
+
+  @@map("channels")
+}
+
+model ChannelRateAvailability {
+  id           Int      @id @default(autoincrement())
+  channelId    Int      @map("channel_id")
+  roomTypeId   Int      @map("room_type_id")
+  date         DateTime @db.Date
+  rate         Float?
+  availability Int?
+  isClosed     Boolean  @default(false) @map("is_closed")
+  updatedAt    DateTime @updatedAt @map("updated_at")
+
+  channel      Channel  @relation(fields: [channelId], references: [id])
+  roomType     RoomType @relation(fields: [roomTypeId], references: [id])
+
+  @@unique([channelId, roomTypeId, date])
+  @@map("channel_rate_availability")
+}
+
+model ChannelSyncLog {
+  id         Int                 @id @default(autoincrement())
+  channelId  Int                 @map("channel_id")
+  direction  ChannelSyncDirection
+  status     ChannelSyncStatus   @default(pending)
+  message    String?             @db.Text
+  startedAt  DateTime            @default(now()) @map("started_at")
+  finishedAt DateTime?           @map("finished_at")
+
+  channel    Channel             @relation(fields: [channelId], references: [id])
+
+  @@map("channel_sync_logs")
 }

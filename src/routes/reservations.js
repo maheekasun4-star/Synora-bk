@@ -436,6 +436,9 @@ router.post('/', authenticateToken, requirePermission('reservations.create'), as
 
     // If checked in immediately, update room status
     if (normalizeReservationStatus(reservation.status) === 'in_house') {
+      if (parseInt(roomId)) {
+        await sm.assertRoomCleanForCheckIn(parseInt(roomId));
+      }
       await prisma.room.update({
         where: { id: reservation.roomId },
         data: { status: 'occupied' },
@@ -520,10 +523,12 @@ router.put('/:id/change-room', authenticateToken, async (req, res) => {
 
     // Update room statuses
     if (normalizedReservationStatus === 'in_house') {
+      // the freshly assigned room must be housekeeping-ready before move-in
+      await sm.assertRoomCleanForCheckIn(parseInt(newRoomId));
       // old room is now dirty
       await prisma.room.update({
         where: { id: oldRoomId },
-        data: { status: 'dirty' },
+        data: { status: 'dirty', cleanStatus: 'dirty' },
       });
       // new room is now occupied
       await prisma.room.update({
@@ -591,6 +596,10 @@ router.put('/:id/status', async (req, res) => {
         return res.status(409).json({ error: `Reservation cannot be checked in from status '${oldStatus}'.` });
       }
 
+      if (roomId) {
+        await sm.assertRoomCleanForCheckIn(roomId);
+      }
+
       const updatedReservation = await prisma.reservation.update({
         where: { id: reservationId },
         data: {
@@ -614,6 +623,10 @@ router.put('/:id/status', async (req, res) => {
       const allowedUpdatingFrom = ['tentative', 'guaranteed', 'room_assigned', 'checked_in', 'in_house'];
       if (!allowedUpdatingFrom.includes(oldStatus)) {
         return res.status(409).json({ error: `Reservation cannot be moved to in-house from status '${oldStatus}'.` });
+      }
+
+      if (roomId) {
+        await sm.assertRoomCleanForCheckIn(roomId);
       }
 
       const updatedReservation = await prisma.reservation.update({
@@ -676,9 +689,9 @@ router.put('/:id/status', async (req, res) => {
       });
 
       if (roomId) {
-        await prisma.room.update({
-          where: { id: roomId },
-          data: { status: 'dirty' },
+        await prisma.$transaction(async (tx) => {
+          await tx.room.update({ where: { id: roomId }, data: { status: 'dirty', cleanStatus: 'dirty' } });
+          await sm.createCheckoutCleanTask(tx, roomId, req.user?.id, new Date());
         });
       }
 

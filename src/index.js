@@ -20,6 +20,8 @@ const userRoutes = require('./routes/users');
 const roleRoutes = require('./routes/roles');
 const permissionRoutes = require('./routes/permissions');
 const auditLogRoutes = require('./routes/auditLogs');
+const housekeepingRoutes = require('./routes/housekeeping');
+const channelRoutes = require('./routes/channels');
 
 const app = express();
 //const PORT = process.env.PORT || 5000;
@@ -56,6 +58,9 @@ app.use('/api/floors', floorsRoutes);
 app.use('/api/night-audit', nightAuditRoutes);
 app.use('/api', refundRoutes);
 app.use('/api/reports', reportRoutes);
+// Housekeeping & Channel Manager
+app.use('/api/housekeeping', housekeepingRoutes);
+app.use('/api/channels', channelRoutes);
 // Reservation lifecycle API (state-machine driven)
 app.use('/api', reservationLifecycleRoutes);
 

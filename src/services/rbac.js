@@ -37,6 +37,10 @@ const PERMISSIONS = [
   ['group_reservation.edit', 'Edit group reservations', 'group_reservation', 'edit'],
   ['group_reservation.checkin', 'Check in group reservations', 'group_reservation', 'checkin'],
   ['group_reservation.checkout', 'Check out group reservations', 'group_reservation', 'checkout'],
+  ['housekeeping.view', 'View housekeeping staff, tasks & room status', 'housekeeping', 'view'],
+  ['housekeeping.manage', 'Manage housekeeping staff, tasks & assignments', 'housekeeping', 'manage'],
+  ['channel_manager.view', 'View channel configurations & sync logs', 'channels', 'view'],
+  ['channel_manager.manage', 'Manage channel configurations & trigger sync', 'channels', 'manage'],
 ];
 
 const ROLE_DEFAULTS = {
@@ -45,6 +49,7 @@ const ROLE_DEFAULTS = {
     'reservations.view', 'reservations.create', 'reservations.update', 'reservations.cancel',
     'rooms.view', 'guests.view', 'guests.create', 'reports.view', 'refund.view', 'refund.create',
     'night_audit.run', 'group_reservation.view', 'group_reservation.create', 'group_reservation.edit', 'group_reservation.checkin', 'group_reservation.checkout',
+    'housekeeping.view', 'housekeeping.manage', 'channel_manager.view',
   ],
   cashier: [
     'reservations.view', 'payments.view', 'payments.create', 'reports.view', 'refund.view', 'refund.process',
